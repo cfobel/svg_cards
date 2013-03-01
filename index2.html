@@ -50,6 +50,13 @@
 <div class="cards_container invisible"></div>
 
 <script type="text/coffeescript">
+    class Card
+        constructor: (@value, @suit) ->
+
+        get_svg: () ->
+            select_text = '.cards_container svg > g[id="' + @value + @suit + '"]'
+            d3.select(select_text)[0][0].cloneNode(true)
+
 
     class SvgCanvas
         constructor: (@id, @width=null) ->
@@ -99,31 +106,45 @@
 
         format_cards: () =>
             @canvas.selectAll('.card')
+                .transition()
                 .attr('transform', (d, i) ->
                     transform_str = 'translate(' + (40 * i) + ', 0)'
                     console.log(d: d, i: i, transform_str: transform_str)
                     return transform_str
                 )
 
+        label_to_value_suit: (label) ->
+            label = label.split('')
+            result =
+                value: label[0..-2].join('')
+                suit: label[label.length - 1]
+
+        set_cards_from_labels: (labels) =>
+            card_value_suits = (@label_to_value_suit(label) for label in labels)
+            cards = (new Card(c.value, c.suit) for c in card_value_suits)
+            @set_cards(cards)
+
         set_cards: (cards) =>
             obj = @
-            @canvas.selectAll('.card')
-                .data(cards)
-              .enter().append('g')
+            cards = @canvas.selectAll('.card')
+                .data(cards, (d) -> d.value + d.suit)
+            cards.exit().remove()
+            cards.enter().append('g')
                 .attr('class', 'card')
                 .each((d) ->
-                    select_text = '.cards_container svg > g[id="' + d + '"]'
-                    card = d3.select(select_text)[0][0].cloneNode(true)
+                    card = d.get_svg()
                     wrapper = d3.select(this).append('g')
                     wrapper[0][0].appendChild(card)
                     #obj._last_card = card: card, wrapper: wrapper
                     bb = card.getBoundingClientRect()
                     console.log(bb.left, bb.top)
                     transform_str = 'translate(' + (-bb.left + 20) + ', ' + (-bb.top) + ')'
-                    console.log(select_text: select_text, transform_str: transform_str, card: card)
                     wrapper.attr('transform', transform_str)
                 )
             @format_cards()
+
+    @SvgCanvas = SvgCanvas
+    @Card = Card
 
     @canvas = new SvgCanvas('cards_table')
     d3.xml("all-colour.svg", "image/svg+xml", (xml) ->
