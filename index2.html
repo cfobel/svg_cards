@@ -1,0 +1,134 @@
+<!DOCTYPE html PUBLIC "-/>
+<html lang="en">
+<head>
+<title>NullMQ placement server example</title> <link href="/dist/bootstrap/css/bootstrap.min.css" rel="stylesheet">
+<link href="/dist/bootstrap/css/bootstrap-responsive.css" rel="stylesheet">
+<link href="/dist/lib/jquery-ui.css" rel="stylesheet">
+<script type="text/javascript" src="/dist/lib/jquery-latest.js"></script>
+<script type="text/javascript" src="/dist/lib/jquery-ui.js"></script>
+<script type="text/javascript" src="/dist/lib/coffee-script.js"></script>
+<script type="text/javascript" src="/dist/lib/d3.v2.js"></script>
+<script type="text/javascript" src="/dist/lib/underscore-min.js"></script>
+<script type="text/javascript" src="/dist/lib/mousetrap.min.js"></script>
+<script type="text/javascript" src="/dist/lib/stomp.js"></script>
+<script type="text/javascript" src="/dist/lib/nullmq.js"></script>
+<script type="text/javascript" src="/dist/lib/sylvester.js"></script>
+<script type="text/javascript" src="/dist/lib/glUtils.js"></script>
+<script type="text/javascript" src="/dist/bootstrap/js/bootstrap.min.js"></script>
+<script type="text/javascript" src="/dist/bootstrap/js/bootstrapx-clickover.js"></script>
+<script type="text/javascript" src="/dist/lib/bootstrap-contextmenu.js"></script>
+<style  type="text/css">
+.improving {
+    background-color: #D5ECBF !important;
+    border-color: #D2E6AB !important;
+    color: #669533 !important;
+}
+.non_improving {
+    background-color: #F2BDB1 !important;
+    border-color: #F0A5A4 !important;
+    color: #BD4247 !important;
+}
+
+.actions div {
+    float: left;
+}
+
+#id_controllers_tbody  {
+    font-size: 0.9em;
+}
+</style>
+</head>
+<body>
+<div class="container-fluid">
+
+<section class="settings">
+  <div class="row-fluid">
+      <div id="cards_table" class="span12"></div>
+  </div>
+</section>
+
+<div class="cards_container invisible"></div>
+
+<script type="text/coffeescript">
+
+    class SvgCanvas
+        constructor: (@id, @width=null) ->
+            @zoom = d3.behavior.zoom()
+            @canvas_container = d3.select('#' + @id)
+            @header = @canvas_container.append('div')
+                        .attr('class', 'canvas_header')
+            if not @width?
+                obj = @
+                jq_obj = $(obj.canvas_container[0])
+                # Restrict height to fit within viewport
+                width = jq_obj.width()
+                console.log(width)
+                height = $(window).height() - jq_obj.position().top
+                @width = Math.min(width, height)
+            @width /= 1.15
+            @canvas = d3.select("#" + @id)
+                        .append("svg")
+                            .attr("width", 1.1 * @width)
+                            .attr("height", 1.1 * @width)
+                        .append('svg:g')
+                            .attr("id", @id + "_transform_group")
+                            .call(@zoom.on("zoom", () => @update_zoom()))
+                        .append('svg:g')
+                            .attr("class", "canvas")
+            zoom = window.location.hash
+            result = /#translate\((-?\d+\.\d+),(-?\d+\.\d+)\)\s+scale\((-?\d+\.\d+)\)/.exec(zoom)
+            if result and result.length == 4
+                [translate_x, translate_y, scale] = result[1..]
+                @zoom.scale(scale)
+                @zoom.translate([translate_x, translate_y])
+                @update_zoom()
+            @scale =
+                x: d3.scale.linear()
+                y: d3.scale.linear()
+
+        update_zoom: (signal=true) =>
+            @_update_zoom(@zoom.translate(), @zoom.scale(), signal)
+
+        _update_zoom: (translate, scale, signal=true) =>
+            #transform_str = "translate(" + translate + ")" + " scale(" + scale + ")"
+            transform_str = "scale(" + scale + ")"
+            @canvas.attr("transform", transform_str)
+            if signal
+                obj = @
+                $(obj).trigger(type: "zoom_updated", scale: scale)
+
+        format_cards: () =>
+            @canvas.selectAll('.card')
+                .attr('transform', (d, i) ->
+                    transform_str = 'translate(' + (40 * i) + ', 0)'
+                    console.log(d: d, i: i, transform_str: transform_str)
+                    return transform_str
+                )
+
+        set_cards: (cards) =>
+            obj = @
+            @canvas.selectAll('.card')
+                .data(cards)
+              .enter().append('g')
+                .attr('class', 'card')
+                .each((d) ->
+                    select_text = '.cards_container svg > g[id="' + d + '"]'
+                    card = d3.select(select_text)[0][0].cloneNode(true)
+                    wrapper = d3.select(this).append('g')
+                    wrapper[0][0].appendChild(card)
+                    #obj._last_card = card: card, wrapper: wrapper
+                    bb = card.getBoundingClientRect()
+                    console.log(bb.left, bb.top)
+                    transform_str = 'translate(' + (-bb.left + 20) + ', ' + (-bb.top) + ')'
+                    console.log(select_text: select_text, transform_str: transform_str, card: card)
+                    wrapper.attr('transform', transform_str)
+                )
+            @format_cards()
+
+    @canvas = new SvgCanvas('cards_table')
+    d3.xml("all-colour.svg", "image/svg+xml", (xml) ->
+      $('.cards_container.invisible').append(xml.documentElement)
+    )
+</script>
+</body>
+</html>
