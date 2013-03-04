@@ -1,7 +1,7 @@
 <!DOCTYPE html PUBLIC "-/>
 <html lang="en">
 <head>
-<title>NullMQ placement server example</title> <link href="/dist/bootstrap/css/bootstrap.min.css" rel="stylesheet">
+<title>SVG Card demo</title> <link href="/dist/bootstrap/css/bootstrap.min.css" rel="stylesheet">
 <link href="/dist/bootstrap/css/bootstrap-responsive.css" rel="stylesheet">
 <link href="/dist/lib/jquery-ui.css" rel="stylesheet">
 <script type="text/javascript" src="/dist/lib/jquery-latest.js"></script>
@@ -9,14 +9,7 @@
 <script type="text/javascript" src="/dist/lib/coffee-script.js"></script>
 <script type="text/javascript" src="/dist/lib/d3.v2.js"></script>
 <script type="text/javascript" src="/dist/lib/underscore-min.js"></script>
-<script type="text/javascript" src="/dist/lib/mousetrap.min.js"></script>
-<script type="text/javascript" src="/dist/lib/stomp.js"></script>
-<script type="text/javascript" src="/dist/lib/nullmq.js"></script>
-<script type="text/javascript" src="/dist/lib/sylvester.js"></script>
-<script type="text/javascript" src="/dist/lib/glUtils.js"></script>
 <script type="text/javascript" src="/dist/bootstrap/js/bootstrap.min.js"></script>
-<script type="text/javascript" src="/dist/bootstrap/js/bootstrapx-clickover.js"></script>
-<script type="text/javascript" src="/dist/lib/bootstrap-contextmenu.js"></script>
 <style  type="text/css">
 .improving {
     background-color: #D5ECBF !important;
@@ -57,6 +50,10 @@
             select_text = '.cards_container svg > g[id="' + @value + @suit + '"]'
             d3.select(select_text)[0][0].cloneNode(true)
 
+    transform_regex = /#translate\((-?\d+\.\d+),(-?\d+\.\d+)\)\s+scale\((-?\d+\.\d+)\)/
+
+    # Make regex available from in console
+    @transform_regex = transform_regex
 
     class SvgCanvas
         constructor: (@id, @width=null) ->
@@ -64,31 +61,47 @@
             @canvas_container = d3.select('#' + @id)
             @header = @canvas_container.append('div')
                         .attr('class', 'canvas_header')
+
             if not @width?
                 obj = @
                 jq_obj = $(obj.canvas_container[0])
                 # Restrict height to fit within viewport
                 width = jq_obj.width()
-                console.log(width)
                 height = $(window).height() - jq_obj.position().top
                 @width = Math.min(width, height)
             @width /= 1.15
-            @canvas = d3.select("#" + @id)
+            @parent = d3.select("#" + @id)
                         .append("svg")
                             .attr("width", 1.1 * @width)
                             .attr("height", 1.1 * @width)
-                        .append('svg:g')
+
+            # Add a background rectangle to catch zoom events which are not
+            # performed over a card.
+            @background = @parent.append('svg:g')
+                .attr("id", @id + "_background")
+                .call(@zoom.on("zoom", () => @update_zoom()))
+              .append('svg:rect')
+                .attr('width', @parent.attr('width'))
+                .attr('height', @parent.attr('height'))
+                .attr('fill', 'white')
+
+            # Add a "canvas" svg group to draw the cards on.  Also, add a
+            # hidden `_transform_group` to catch zoom events, which are then
+            # applied to the canvas element.
+            @canvas = @parent.append('svg:g')
                             .attr("id", @id + "_transform_group")
                             .call(@zoom.on("zoom", () => @update_zoom()))
                         .append('svg:g')
                             .attr("class", "canvas")
+
             zoom = window.location.hash
-            result = /#translate\((-?\d+\.\d+),(-?\d+\.\d+)\)\s+scale\((-?\d+\.\d+)\)/.exec(zoom)
+            result = transform_regex.exec(zoom)
             if result and result.length == 4
                 [translate_x, translate_y, scale] = result[1..]
                 @zoom.scale(scale)
                 @zoom.translate([translate_x, translate_y])
                 @update_zoom()
+
             @scale =
                 x: d3.scale.linear()
                 y: d3.scale.linear()
@@ -97,7 +110,6 @@
             @_update_zoom(@zoom.translate(), @zoom.scale(), signal)
 
         _update_zoom: (translate, scale, signal=true) =>
-            #transform_str = "translate(" + translate + ")" + " scale(" + scale + ")"
             transform_str = "scale(" + scale + ")"
             @canvas.attr("transform", transform_str)
             if signal
@@ -109,7 +121,6 @@
                 .transition()
                 .attr('transform', (d, i) ->
                     transform_str = 'translate(' + (40 * i) + ', 0)'
-                    console.log(d: d, i: i, transform_str: transform_str)
                     return transform_str
                 )
 
@@ -118,6 +129,8 @@
             result =
                 value: label[0..-2].join('')
                 suit: label[label.length - 1]
+
+        get_cards: () => @canvas.selectAll('.card').data()
 
         set_cards_from_labels: (labels) =>
             card_value_suits = (@label_to_value_suit(label) for label in labels)
@@ -135,11 +148,35 @@
                     card = d.get_svg()
                     wrapper = d3.select(this).append('g')
                     wrapper[0][0].appendChild(card)
-                    #obj._last_card = card: card, wrapper: wrapper
                     bb = card.getBoundingClientRect()
-                    console.log(bb.left, bb.top)
                     transform_str = 'translate(' + (-bb.left + 20) + ', ' + (-bb.top) + ')'
                     wrapper.attr('transform', transform_str)
+                )
+                .call(d3.behavior.drag()
+                    .on("dragstart", (d) ->
+                        transform = d3.select(this).attr('transform')
+                        translate_regex = /translate\((-?\d+(\.\d+)?),(-?\d+(\.\d+)?)\)/
+                        result = translate_regex.exec(transform)
+                        if result and result.length >= 4
+                            obj._drag_card_origin =
+                                x: +result[1]
+                                y: +result[3]
+                        else
+                            obj._drag_card_origin = null
+                    )
+                    .on("drag", (d) ->
+                        if obj._drag_card_origin?
+                            obj._drag_card_origin.x += d3.event.dx
+                            obj._drag_card_origin.y += d3.event.dy
+                            p =
+                                x: Math.max(0, obj._drag_card_origin.x)
+                                y: Math.max(0, obj._drag_card_origin.y)
+                            d3.select(this).attr('transform',
+                                    'translate(' + p.x + ',' + p.y + ')')
+                    )
+                    .on("dragend", (d) =>
+                        # Do nothing for now :)
+                    )
                 )
             @format_cards()
 
@@ -147,9 +184,16 @@
     @Card = Card
 
     @canvas = new SvgCanvas('cards_table')
-    d3.xml("all-colour.svg", "image/svg+xml", (xml) ->
+
+    # Load card images from SVG file using d3's XML reader
+    d3.xml("dist/svg-cards/all-colour.svg", "image/svg+xml", (xml) ->
       $('.cards_container.invisible').append(xml.documentElement)
+      canvas.set_cards_from_labels(['AC', '10D', '4H'])
+
+      # To fetch the cards that are set, use:
+      console.log(canvas.get_cards())
     )
+
 </script>
 </body>
 </html>
